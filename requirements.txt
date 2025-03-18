@@ -1,6 +1,6 @@
 yfinance
 newsapi-python
-snscrape
+tweepy
 textblob
 scikit-learn
 numpy

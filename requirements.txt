@@ -9,3 +9,7 @@ matplotlib
 streamlit
 joblib
 ta
+stable-baselines3
+torch
+gym
+shimmy>=2.0

@@ -1,44 +1,50 @@
 import streamlit as st
 from src.utils.data_collection import fetch_stock_data
 from src.utils.social_sentiment import analyze_news_sentiment, analyze_social_sentiment
-from src.utils.trading_strategy import decide_trade
+from src.utils.trading_strategy import decide_trade, risk_managed_decision
 from src.models.predictive_model import TradingPredictor
+from src.models.rl_agent import load_rl_agent
 
-st.title("🚀 Financial Trading Bot")
+st.title("🚀 Advanced Financial Trading Bot")
 
 symbol = st.text_input("Enter Stock Symbol:", "AAPL")
-if st.button("Get Recommendation"):
-    with st.spinner("🔄 Fetching data and analyzing..."):
-        # Fetch latest stock data with indicators
-        df = fetch_stock_data(symbol)
+if st.button("Analyze and Trade"):
+    with st.spinner("Fetching data and analyzing..."):
+        df = fetch_stock_data(symbol, period='60d')
         latest_data = df.iloc[-1:]
+        current_price = latest_data['Close'].values[0]
 
-        # Sentiment analysis
         news_sentiment = analyze_news_sentiment(symbol)
         social_sentiment = analyze_social_sentiment(symbol)
 
-        # Load trained ML model
         predictor = TradingPredictor()
         features = ['RSI', 'MACD', 'MACD_signal', 'Bollinger_high', 'Bollinger_low', 'SMA_20']
-        prediction = predictor.predict(latest_data[features])[0]
-        proba = predictor.predict_proba(latest_data[features])[0][prediction]
+        ml_pred = predictor.predict(latest_data[features])[0]
+        proba = predictor.predict_proba(latest_data[features])[0][ml_pred]
 
-        ml_decision = "BUY" if prediction == 1 else "SELL"
+        ml_decision = "BUY" if ml_pred == 1 else "SELL"
         sentiment_decision = decide_trade(news_sentiment, social_sentiment)
-        
-        # Combine decisions clearly
-        final_decision = ml_decision if ml_decision == sentiment_decision else "HOLD"
 
-        # Display clearly
-        st.write(f"## 📈 Final Decision: **{final_decision}**")
+        # Load RL model clearly
+        rl_model, rl_env = load_rl_agent(df)
+        obs = rl_env.reset()
+        rl_action, _ = rl_model.predict(obs)
+        rl_decision = ["HOLD", "BUY", "SELL"][rl_action]
 
-        st.write("### 🧠 ML Model Prediction:")
-        st.write(f"- **Decision:** {ml_decision}")
-        st.write(f"- **Confidence:** {proba:.2%}")
+        # Final combined decision
+        combined_decision = ml_decision if ml_decision == sentiment_decision == rl_decision else "HOLD"
 
-        st.write("### 📰 Sentiment Analysis:")
-        st.write(f"- **News sentiment:** {news_sentiment:.4f}")
-        st.write(f"- **Social media sentiment:** {social_sentiment:.4f}")
+        # Risk-managed decision
+        entry_price = df['Close'].iloc[-5]  # Assuming entry was 5 days ago clearly
+        final_decision = risk_managed_decision(combined_decision, current_price, entry_price)
 
-        st.write("### 📊 Recent Stock Data:")
+        st.header("📈 Trading Decision")
+        st.write(f"**Final Risk-Managed Decision:** {final_decision}")
+
+        st.subheader("🔍 Decision Breakdown")
+        st.write(f"- **ML Prediction:** {ml_decision} ({proba:.2%} confidence)")
+        st.write(f"- **Sentiment Decision:** {sentiment_decision}")
+        st.write(f"- **RL Agent Decision:** {rl_decision}")
+
+        st.subheader("📊 Latest Market Data")
         st.dataframe(df.tail())

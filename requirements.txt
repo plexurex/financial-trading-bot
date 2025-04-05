@@ -13,3 +13,6 @@ stable-baselines3
 torch
 gym
 shimmy>=2.0
+snscrape
+certifi
+praw

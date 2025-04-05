@@ -25,7 +25,7 @@ if st.button("Analyze and Trade"):
         ml_decision = "BUY" if ml_pred == 1 else "SELL"
         sentiment_decision = decide_trade(news_sentiment, social_sentiment)
 
-        # Load RL model clearly
+        # Load RL model
         rl_model, rl_env = load_rl_agent(df)
         obs = rl_env.reset()
         rl_action, _ = rl_model.predict(obs)
@@ -34,8 +34,8 @@ if st.button("Analyze and Trade"):
         # Final combined decision
         combined_decision = ml_decision if ml_decision == sentiment_decision == rl_decision else "HOLD"
 
-        # Risk-managed decision
-        entry_price = df['Close'].iloc[-5]  # Assuming entry was 5 days ago clearly
+        # Risk-managed decision (assuming entry price from 5 days ago)
+        entry_price = df['Close'].iloc[-5]
         final_decision = risk_managed_decision(combined_decision, current_price, entry_price)
 
         st.header("📈 Trading Decision")
@@ -45,6 +45,11 @@ if st.button("Analyze and Trade"):
         st.write(f"- **ML Prediction:** {ml_decision} ({proba:.2%} confidence)")
         st.write(f"- **Sentiment Decision:** {sentiment_decision}")
         st.write(f"- **RL Agent Decision:** {rl_decision}")
+
+        # Display the raw individual sentiments for clarity
+        st.subheader("📝 Raw Sentiment Values")
+        st.write(f"- **News Sentiment:** {news_sentiment:.4f}")
+        st.write(f"- **Reddit Sentiment:** {social_sentiment:.4f}")
 
         st.subheader("📊 Latest Market Data")
         st.dataframe(df.tail())

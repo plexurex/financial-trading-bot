@@ -16,3 +16,6 @@ shimmy>=2.0
 snscrape
 certifi
 praw
+yfinance
+matplotlib
+

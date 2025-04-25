@@ -1,21 +1,43 @@
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from joblib import dump, load
+# src/models/predictive_model.py
 
-class TradingPredictor:
-    def __init__(self, model_path='trading_model.joblib'):
-        self.model_path = model_path
-        try:
-            self.model = load(model_path)
-        except:
-            self.model = RandomForestClassifier(n_estimators=100)
+import os
+import joblib
 
-    def train(self, X, y):
-        self.model.fit(X, y)
-        dump(self.model, self.model_path)
+class MultiHorizonPredictor:
+    """
+    Loads 4 RandomForest models for a given crypto symbol,
+    expecting them in src/data/ with names like BTC_USD_h1.joblib.
+    """
 
-    def predict(self, X):
-        return self.model.predict(X)
+    def __init__(self, symbol, data_dir=None):
+        # default data_dir → ../data relative to this file
+        if data_dir is None:
+            base = os.path.dirname(__file__)         # src/models
+            data_dir = os.path.normpath(os.path.join(base, "..", "data"))
 
-    def predict_proba(self, X):
-        return self.model.predict_proba(X)
+        # convert dash→underscore to match filenames
+        self.symbol = symbol.replace("-", "_")       # e.g. "BTC-USD" → "BTC_USD"
+        self.horizons = [1, 30, 60, 252]
+        self.models = {}
+
+        for h in self.horizons:
+            fname = f"{self.symbol}_h{h}.joblib"
+            path  = os.path.join(data_dir, fname)
+            if not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"Missing model for {symbol} horizon={h}d at {path}"
+                )
+            self.models[h] = joblib.load(path)
+
+    def predict(self, X, horizon):
+        """
+        X: pd.DataFrame with a single row of features.
+        horizon: 1, 30, 60, or 252
+        returns (pred_class:int, pred_proba:float)
+        """
+        if horizon not in self.models:
+            raise ValueError(f"Horizon {horizon} not supported")
+        clf = self.models[horizon]
+        pred = int(clf.predict(X)[0])
+        proba = float(clf.predict_proba(X)[0][pred])
+        return pred, proba

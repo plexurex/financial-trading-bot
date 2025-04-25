@@ -5,7 +5,7 @@ import numpy as np
 def fetch_multi_asset_data(tickers, period='1y', interval='1d'):
     """
     Fetch historical data for a list of tickers using yfinance.
-    Returns a dictionary mapping each ticker to its DataFrame.
+    Returns a dict mapping each ticker to its DataFrame.
     """
     data = {}
     for ticker in tickers:
@@ -16,99 +16,76 @@ def fetch_multi_asset_data(tickers, period='1y', interval='1d'):
 
 def compute_signals(df, window=20):
     """
-    Compute a simple moving average (SMA)-based signal for an individual asset.
-    Signal = 1 if the asset's Close price is above its SMA, else 0.
-    
-    This function computes the SMA, then forces the 'Close' and 'SMA' columns
-    to be one-dimensional Series and aligns them along the index (axis=0) before 
-    computing the signal.
+    Compute a simple moving average (SMA)-based signal for an asset.
+    Signal = 1 if Close > SMA, else 0.
+    Aligns the Close and SMA series to avoid misalignment.
     """
     df = df.copy()
-    # Compute the 20-day SMA and store in column 'SMA'
+    # 1) Compute the SMA
     df['SMA'] = df['Close'].rolling(window=window).mean()
-    
-    # Force 'Close' and 'SMA' to be Series
-    close = df['Close'].squeeze()
-    sma = df['SMA'].squeeze()
-    
-    # Align the two series on their index (inner join)
-    aligned_close, aligned_sma = close.align(sma, join='inner', copy=False, axis=0)
-    
-    # Compute the trading signal: 1 if aligned_close > aligned_sma, else 0
-    signal = (aligned_close > aligned_sma).astype(int)
-    
-    # Restrict df to the aligned indices and add the signal column
-    df_aligned = df.loc[aligned_close.index].copy()
-    df_aligned['signal'] = signal
 
-    # Drop any rows with NaNs resulting from the rolling calculation
+    # 2) Force them into 1D Series and align by index
+    close = df['Close'].squeeze()
+    sma   = df['SMA'].squeeze()
+    aligned_close, aligned_sma = close.align(sma, join='inner', copy=False, axis=0)
+
+    # 3) Build an aligned DataFrame and generate the signal
+    df_aligned = df.loc[aligned_close.index].copy()
+    df_aligned['signal'] = (aligned_close > aligned_sma).astype(int)
+
+    # 4) Drop any NaNs introduced by the rolling mean
     return df_aligned.dropna()
 
 def simulate_portfolio(data_dict, initial_capital=10000, window=20):
     """
-    Simulate a multi-asset adaptive trading strategy that holds positions over multiple days.
+    Simulate a multi-asset strategy that holds positions over days.
     
-    For each asset:
-      - The initial capital is allocated equally.
-      - If an asset’s signal is 1 (BUY) and you are not invested (shares == 0),
-        buy at the close price and hold until the signal changes.
-      - If the signal is 0 (SELL) while holding shares, sell to convert back to cash.
-    
-    The function calculates the portfolio value over time for each asset and then
-    combines them over the common dates.
-    
-    Returns:
-      - combined_portfolio: a DataFrame with the overall portfolio value indexed by date.
+    - Capital is split equally across assets.
+    - If signal=1 and no shares held, buy at that day's close.
+    - If signal=0 and shares held, sell at that day's close.
+    - Portfolio value each day = cash + shares * close.
+    - Returns a DataFrame of combined portfolio value over common dates.
     """
-    # Compute signals for each asset
-    dfs = {}
-    for ticker, df in data_dict.items():
-        dfs[ticker] = compute_signals(df, window=window).sort_index()
-
-    # Dictionary to hold portfolio value series for each asset
+    num_assets = len(data_dict)
+    allocation  = initial_capital / num_assets
     portfolio_values = {}
-    for ticker, df in dfs.items():
-        # Initialize cash and holdings for this asset
-        cash = initial_capital / len(data_dict)
-        shares = 0.0
-        # Prepare a Series to track portfolio value over time
-        pv = pd.Series(index=df.index, dtype=float)
-        
-        for date in df.index:
-            # Get today's closing price and ensure it's a scalar
-            price = df.loc[date, 'Close']
-            if not np.isscalar(price):
-                price = price.item() if hasattr(price, 'item') else price.iloc[0]
-            
-            # Get the signal and make sure it's a scalar
-            signal = df.loc[date, 'signal']
-            if not np.isscalar(signal):
-                signal = signal.item() if hasattr(signal, 'item') else signal.iloc[0]
-            
-            # Trading logic:
-            # - If signal is 1 and no shares are held, buy at the closing price.
+
+    # 1) Simulate each asset individually
+    for ticker, df in data_dict.items():
+        df_sig = compute_signals(df, window=window).sort_index()
+        cash, shares = allocation, 0.0
+        pv = pd.Series(index=df_sig.index, dtype=float)
+
+        for date in df_sig.index:
+            # Pull the full row (may be Series or tiny DataFrame)
+            row = df_sig.loc[date]
+            if isinstance(row, pd.DataFrame):
+                row = row.iloc[0]
+
+            price  = float(row['Close'])
+            signal = int(row['signal'])
+
+            # Buy if signal=1 and not already invested
             if signal == 1 and shares == 0:
                 shares = cash / price
                 cash = 0.0
-            # - If signal is 0 and shares are held, sell all to convert to cash.
+            # Sell if signal=0 and shares held
             elif signal == 0 and shares > 0:
-                cash = shares * price
+                cash   = shares * price
                 shares = 0.0
 
-            # Update the portfolio value (cash + market value of shares)
+            # Record portfolio value for this asset
             pv.loc[date] = cash + shares * price
-        
+
         portfolio_values[ticker] = pv
 
-    # Find common dates across all asset portfolio series
-    common_dates = set.intersection(*(set(pv.index) for pv in portfolio_values.values()))
+    # 2) Combine across assets on common dates
+    common_dates = set.intersection(*(set(s.index) for s in portfolio_values.values()))
     common_dates = sorted(common_dates)
-    
-    # Combine the portfolio values from each asset into an overall portfolio series
-    combined_portfolio = pd.DataFrame(index=common_dates, columns=['portfolio_value'])
+    combined = pd.DataFrame(index=common_dates, columns=['portfolio_value'], dtype=float)
+
     for date in common_dates:
-        total_val = sum(portfolio_values[ticker].loc[date] for ticker in portfolio_values if date in portfolio_values[ticker].index)
-        combined_portfolio.loc[date, 'portfolio_value'] = total_val
+        total = sum(portfolio_values[t].loc[date] for t in portfolio_values)
+        combined.loc[date, 'portfolio_value'] = total
 
-    return combined_portfolio
-
+    return combined

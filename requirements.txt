@@ -18,4 +18,7 @@ certifi
 praw
 yfinance
 matplotlib
-
+streamlit-autorefresh
+pytrends
+wordcloud
+plotly

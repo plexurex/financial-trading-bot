@@ -39,5 +39,5 @@ class MultiHorizonPredictor:
             raise ValueError(f"Horizon {horizon} not supported")
         clf = self.models[horizon]
         pred = int(clf.predict(X)[0])
-        proba = float(clf.predict_proba(X)[0][pred])
-        return pred, proba
+        proba_up = float(clf.predict_proba(X)[0][1])
+        return pred, proba_up

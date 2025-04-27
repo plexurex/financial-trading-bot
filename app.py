@@ -136,10 +136,9 @@ if page == "Market Analysis":
         hdays      = horizon_map[horizon_label]
         feats      = ["RSI","MACD","MACD_signal","Bollinger_high","Bollinger_low","SMA_20"]
         pred_class, proba = predictor.predict(latest[feats], hdays)
-        hret    = df["Close"].pct_change(periods=hdays).dropna()
-        med_ret = hret.median() if not hret.empty else df["Close"].pct_change().median()
-        shift   = np.clip((proba - 0.5)*2*med_ret, -abs(med_ret)*2, abs(med_ret)*2)
-        fut_pr  = price*(1+shift)
+        avg_hday_ret = df["Close"].pct_change(periods=hdays).dropna().abs().median()
+        shift        = (proba - 0.5) * 2 * avg_hday_ret
+        fut_pr       = price * (1 + shift)
         last_dt = df.index[-1]
         fut_dt  = last_dt + pd.Timedelta(days=hdays)
         fig.add_trace(go.Scatter(x=[last_dt,fut_dt],
@@ -156,21 +155,27 @@ if page == "Market Analysis":
         )
         st.plotly_chart(fig, use_container_width=True)
 
+        # RL + sentiment → final decision via majority vote
         rl_model, rl_env = load_rl_agent(df)
         obs             = rl_env.reset()
         rl_act, _       = rl_model.predict(obs)
-        action = (int(rl_act.item())
-                  if hasattr(rl_act, "item")
-                  else int(np.atleast_1d(rl_act)[0]))
+        if hasattr(rl_act, "item"):
+            action = int(rl_act.item())
+        else:
+            action = int(np.atleast_1d(rl_act)[0])
         rl_dec   = ["HOLD","BUY","SELL"][action]
         sent_dec = decide_trade(news_s, soc_s)
-        final    = "HOLD"
-        if pred_class == 1 and rl_dec == "BUY" and sent_dec == "BUY":
-            final = "BUY"
-        if pred_class == 0 and rl_dec == "SELL" and sent_dec == "SELL":
-            final = "SELL"
-        final = risk_managed_decision(final, price,
-                                      df["Close"].iloc[-5] if len(df)>=5 else price)
+
+        # ML signal is our primary directional forecast
+        ml_dec = "BUY" if pred_class == 1 else "SELL"
+
+        # Recommended action = ML direction
+        vote = ml_dec
+
+        # apply risk management on that ML vote
+        entry_price = df["Close"].iloc[-5] if len(df) >= 5 else price
+        final = risk_managed_decision(vote, price, entry_price)
+
 
         color = "#36B37E" if final=="BUY" else "#FF5630" if final=="SELL" else "#6554C0"
         st.markdown(f"""
@@ -183,11 +188,13 @@ if page == "Market Analysis":
         """, unsafe_allow_html=True)
 
         with st.expander("Decision Factors"):
-            st.write(f"- ML ({horizon_label}): {'UP' if pred_class==1 else 'DOWN'} ({proba:.1%})")
-            st.write(f"- RL Agent: {rl_dec}")
-            st.write(f"- Sentiment: {sent_dec}")
-            st.write(f"- News Sentiment: {news_s:.4f}")
-            st.write(f"- Social Sentiment: {soc_s:.4f}")
+            st.markdown(f"- **ML ({horizon_label}) Prediction:** {'UP' if pred_class==1 else 'DOWN'} at **{proba:.1%}** confidence.")
+            st.markdown(f"- **RL Agent Recommendation:** {rl_dec}  \n"
+                        f"  *Reason:* The reinforcement‐learning agent has been trained to maximize portfolio net‐worth and currently sees better expected returns from {rl_dec.lower()}.")
+            st.markdown(f"- **Sentiment Analysis:** {sent_dec}  \n"
+                        f"  *Reason:* News sentiment is **{news_s:.4f}** and social sentiment is **{soc_s:.4f}**, indicating a neutral/uncertain market mood, so no clear buy/sell signal.")
+            st.markdown(f"- **News Sentiment Score:** {news_s:.4f}")
+            st.markdown(f"- **Social Sentiment Score:** {soc_s:.4f}")
 
         gauge = go.Figure(go.Indicator(
             mode="gauge+number",
@@ -214,20 +221,7 @@ if page == "Market Analysis":
             - **(-0.3 … 0.3)** Neutral  
             - **[0.3 … +1.0]** Positive
             """)
-        with g2:
-            posts = [p.title for p in reddit.subreddit("wallstreetbets").search(symbol, limit=30)]
-            if posts:
-                wc = WordCloud(background_color="white").generate(" ".join(posts))
-                st.image(wc.to_array(), use_container_width=True)
-            try:
-                py = TrendReq(); py.build_payload([symbol], timeframe="now 12-H")
-                tr = py.interest_over_time()[symbol]
-                fig2 = px.line(tr, labels={"value":"Trend","date":"Time"})
-                fig2.update_layout(template="plotly_dark", height=200)
-                st.plotly_chart(fig2, use_container_width=True)
-            except:
-                pass
-
+        
 # --- BACKTESTING ---
 elif page == "Backtesting":
     st.markdown("<h1 class='main-title'>Strategy Backtesting</h1>", unsafe_allow_html=True)

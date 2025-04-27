@@ -1,34 +1,96 @@
+# src/utils/social_sentiment.py
+
+import feedparser
 from textblob import TextBlob
-from newsapi import NewsApiClient
 import praw
+from datetime import datetime, timedelta
+import urllib.parse
 
-# News API setup
-newsapi = NewsApiClient(api_key='163296e1a4fa4de0b050244e181e9507')
+# Profanity filter for Reddit titles
+BANNED_WORDS = {"shit", "damn", "crap", "bollocks"}
 
-# Reddit API setup (use your exact credentials here)
+# Reddit API setup
 reddit = praw.Reddit(
     client_id="LXcKMrigukq_jaojP4ObxQ",
     client_secret="DHBaPjJHpBW2eqTd1sT5b8Cib5Xj0A",
     user_agent="financial_bot by u/Dull-Present-1246",
     username="Dull-Present-1246",
-    password="YousefFadiw123"  # <-- put your Reddit password here
+    password="YousefFadiw123"
 )
 
-# News sentiment analysis
-def analyze_news_sentiment(keyword, articles_count=50):
-    articles = newsapi.get_everything(q=keyword, language='en', sort_by='relevancy', page_size=articles_count)
-    sentiments = [TextBlob(article['title']).sentiment.polarity for article in articles['articles']]
-    return sum(sentiments) / len(sentiments) if sentiments else 0
+def _clean_symbol(sym: str) -> str:
+    """
+    Convert "BTC-USD" → "BTC", etc., for subreddit searches.
+    """
+    return sym.split("-")[0]
 
-# Reddit social sentiment analysis
-def analyze_social_sentiment(keyword, subreddit_names=['stocks', 'investing', 'cryptocurrency'], num_posts=50):
+def analyze_news_sentiment(keyword: str,
+                           horizon_days: int = 1,
+                           articles_count: int = 50) -> float:
+    """
+    Fetch up to `articles_count` headlines from
+    Google News RSS search for `keyword` over the last `horizon_days`,
+    then return average TextBlob polarity.
+    """
+    # clamp to [1, 365] days
+    days = max(1, min(horizon_days, 365))
+    # build the RSS URL — Google News supports "when:Xd"
+    q = urllib.parse.quote_plus(keyword)
+    rss_url = (
+        f"https://news.google.com/rss/search?"
+        f"q={q}+when:{days}d&hl=en-US&gl=US&ceid=US:en"
+    )
+
+    feed = feedparser.parse(rss_url)
+    entries = feed.entries or []
+    # take up to our limit
+    titles = [e.title for e in entries[:articles_count] if hasattr(e, "title")]
+
+    # sentiment
+    polarities = [TextBlob(t).sentiment.polarity for t in titles]
+    if not polarities:
+        return 0.0
+    return float(sum(polarities) / len(polarities))
+
+
+def analyze_social_sentiment(keyword: str,
+                             horizon_days: int = 1,
+                             subreddit_names: tuple[str, ...] = ('stocks', 'investing', 'cryptocurrency'),
+                             num_posts: int = 50) -> float:
+    """
+    Pull up to `num_posts` titles from each subreddit, filtered by `horizon_days`:
+      ≤1   → 'day'
+      ≤30  → 'week'
+      ≤60  → 'month'
+      else → 'year'
+    Filters out any containing profanity, then returns average polarity.
+    """
+    coin = _clean_symbol(keyword)
+
+    if horizon_days <= 1:
+        tf = 'day'
+    elif horizon_days <= 30:
+        tf = 'week'
+    elif horizon_days <= 60:
+        tf = 'month'
+    else:
+        tf = 'year'
+
     sentiments = []
-    try:
-        for subreddit_name in subreddit_names:
-            subreddit = reddit.subreddit(subreddit_name)
-            for post in subreddit.search(keyword, limit=num_posts):
+    for name in subreddit_names:
+        try:
+            for post in reddit.subreddit(name).search(
+                coin,
+                limit=num_posts,
+                time_filter=tf
+            ):
+                title = post.title.lower()
+                if any(bad in title for bad in BANNED_WORDS):
+                    continue
                 sentiments.append(TextBlob(post.title).sentiment.polarity)
-        return sum(sentiments) / len(sentiments) if sentiments else 0
-    except Exception as e:
-        print(f"Reddit API Error: {e}")
-        return 0  # Return neutral sentiment if Reddit fails
+        except Exception:
+            continue
+
+    if not sentiments:
+        return 0.0
+    return float(sum(sentiments) / len(sentiments))

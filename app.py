@@ -119,8 +119,15 @@ if page == "Market Analysis":
 
         latest = df.iloc[-1:]
         price  = float(latest["Close"].iloc[0])
-        news_s = analyze_news_sentiment(symbol)
-        soc_s  = analyze_social_sentiment(symbol)
+        hdays  = horizon_map[horizon_label]
+        # call your new sentiment functions with the look-back period
+        news_s = analyze_news_sentiment(symbol,
+                                        horizon_days=hdays,
+                                        articles_count=None)
+        soc_s  = analyze_social_sentiment(symbol,
+                                          horizon_days=hdays,
+                                          num_posts=None)
+
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close",

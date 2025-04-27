@@ -1,4 +1,3 @@
-# src/utils/social_sentiment.py
 
 import feedparser
 from textblob import TextBlob
@@ -24,6 +23,7 @@ def _clean_symbol(sym: str) -> str:
     """
     return sym.split("-")[0]
 
+#News Sentiment
 def analyze_news_sentiment(keyword: str,
                            horizon_days: int = 1,
                            articles_count: int = 50) -> float:
@@ -32,15 +32,15 @@ def analyze_news_sentiment(keyword: str,
     Google News RSS search for `keyword` over the last `horizon_days`,
     then return average TextBlob polarity.
     """
-    # clamp to [1, 365] days
+    
     days = max(1, min(horizon_days, 365))
-    # build the RSS URL — Google News supports "when:Xd"
+    #    # Google News RSS search
     q = urllib.parse.quote_plus(keyword)
     rss_url = (
         f"https://news.google.com/rss/search?"
         f"q={q}+when:{days}d&hl=en-US&gl=US&ceid=US:en"
     )
-
+#    # Parse the RSS feed
     feed = feedparser.parse(rss_url)
     entries = feed.entries or []
     # take up to our limit
@@ -52,7 +52,7 @@ def analyze_news_sentiment(keyword: str,
         return 0.0
     return float(sum(polarities) / len(polarities))
 
-
+# Social Sentiment
 def analyze_social_sentiment(keyword: str,
                              horizon_days: int = 1,
                              subreddit_names: tuple[str, ...] = ('stocks', 'investing', 'cryptocurrency'),

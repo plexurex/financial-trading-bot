@@ -1,4 +1,3 @@
-# src/models/train_multi_horizon.py
 
 import os
 import pandas as pd
@@ -8,7 +7,7 @@ import joblib
 
 from src.utils.data_collection import fetch_stock_data
 
-# TA imports
+
 from ta.trend import RSIIndicator, MACD, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 
@@ -55,7 +54,7 @@ def add_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     # EMA
     df["EMA_20"] = EMAIndicator(df["Close"], window=20).ema_indicator()
 
-    # Drop any rows with NaNs introduced by indicators
+    
     return df.dropna()
 
 def prepare_targets(df: pd.DataFrame, horizons: list[int]) -> pd.DataFrame:
@@ -66,7 +65,7 @@ def prepare_targets(df: pd.DataFrame, horizons: list[int]) -> pd.DataFrame:
         df[f"Target_{h}"] = (
             df["Close"].shift(-h) - df["Close"] > 0
         ).astype(int)
-    # drop tail rows where shift(-h) created NaNs
+    
     return df.dropna()
 
 def main():

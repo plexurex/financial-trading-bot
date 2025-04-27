@@ -98,7 +98,7 @@ def solve_minvar_with_return(cov: pd.DataFrame,
     w = lam * (invC @ ones) + gam * (invC @ mu.values)
     return w
 
-# --- MARKET ANALYSIS ---
+# MARKET ANALYSIS 
 if page == "Market Analysis":
     st.markdown("<h1 class='main-title'>Market Analysis & Trading Signals</h1>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([2,2,1])
@@ -229,7 +229,7 @@ if page == "Market Analysis":
             - **[0.3 … +1.0]** Positive
             """)
         
-# --- BACKTESTING ---
+# BACKTESTING 
 elif page == "Backtesting":
     st.markdown("<h1 class='main-title'>Strategy Backtesting</h1>", unsafe_allow_html=True)
     t1, t2 = st.tabs(["Single-Asset","Multi-Asset"])
@@ -276,7 +276,7 @@ elif page == "Backtesting":
             final = port["portfolio_value"].iloc[-1]
             st.markdown(f"**Final Value:** ${final:,.2f}  **Return:** {(final/10000-1)*100:.2f}%")
 
-# --- PORTFOLIO OPTIMIZATION ---
+# PORTFOLIO OPTIMIZATION 
 elif page == "Portfolio Optimization":
     st.markdown("<h1 class='main-title'>Portfolio Optimization</h1>", unsafe_allow_html=True)
 

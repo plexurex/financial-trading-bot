@@ -22,4 +22,5 @@ streamlit-autorefresh
 pytrends
 wordcloud
 plotly
-newsdataapi
+GoogleNews
+feedparser

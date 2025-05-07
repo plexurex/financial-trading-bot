@@ -8,7 +8,10 @@ from pytrends.request import TrendReq
 from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
 import plotly.express as px
-
+from ta.momentum   import RSIIndicator
+import plotly.express as px
+from ta.trend      import MACD,EMAIndicator
+from ta.volatility import BollingerBands,AverageTrueRange
 from src.utils.data_collection        import fetch_stock_data
 from src.models.multi_asset_trading  import fetch_multi_asset_data, simulate_portfolio
 from src.utils.social_sentiment      import analyze_news_sentiment, analyze_social_sentiment, reddit
@@ -16,7 +19,7 @@ from src.utils.trading_strategy      import decide_trade, risk_managed_decision
 from src.models.predictive_model     import MultiHorizonPredictor
 from src.models.rl_agent            import load_rl_agent
 from src.utils.backtesting           import backtest_strategy
-
+from textblob import TextBlob
 st.set_page_config(
     page_title="QuantTrader Pro",
     page_icon="📈",
@@ -113,11 +116,25 @@ if page == "Market Analysis":
 
     if st.session_state.get("run_analysis"):
         period = hist_map[horizon_map[horizon_label]]
-        df     = fetch_stock_data(symbol, period=period, interval="1d")
+        df = fetch_stock_data(symbol, period=period, interval="1d")
         if df.empty:
             st.error("No data returned."); st.stop()
 
+        # --- compute technical indicators so our predictor has its features ---
+        df["RSI"]            = RSIIndicator(df["Close"], window=14).rsi()
+        macd                 = MACD(df["Close"], window_slow=26, window_fast=12, window_sign=9)
+        df["MACD"]           = macd.macd()
+        df["MACD_signal"]    = macd.macd_signal()
+        bb                   = BollingerBands(df["Close"], window=20, window_dev=2)
+        df["Bollinger_high"] = bb.bollinger_hband()
+        df["Bollinger_low"]  = bb.bollinger_lband()
+        df["ATR_14"]         = AverageTrueRange(df["High"], df["Low"], df["Close"], window=14).average_true_range()
+        df["EMA_20"]         = EMAIndicator(df["Close"], window=20).ema_indicator()
+        df["SMA_20"] = df["Close"].rolling(window=20).mean()
+        # drop the warm-up NaNs
+        df.dropna(subset=["RSI","MACD","MACD_signal","Bollinger_high","ATR_14","EMA_20","SMA_20"], inplace=True)
         latest = df.iloc[-1:]
+
         price  = float(latest["Close"].iloc[0])
         hdays  = horizon_map[horizon_label]
         # call your new sentiment functions with the look-back period
@@ -141,7 +158,7 @@ if page == "Market Analysis":
 
         predictor = MultiHorizonPredictor(symbol)
         hdays      = horizon_map[horizon_label]
-        feats      = ["RSI","MACD","MACD_signal","Bollinger_high","Bollinger_low","SMA_20"]
+        feats      = ["RSI","MACD","MACD_signal","Bollinger_high","Bollinger_low","ATR_14","EMA_20"]
         pred_class, proba = predictor.predict(latest[feats], hdays)
         avg_hday_ret = df["Close"].pct_change(periods=hdays).dropna().abs().median()
         shift        = (proba - 0.5) * 2 * avg_hday_ret
@@ -245,7 +262,14 @@ elif page == "Backtesting":
             st.write("")
             run_bt = st.button("Run Backtest")
         if run_bt:
-            dfh, met = backtest_strategy(fetch_stock_data(sym, period=per, interval="1d"))
+            # 1) fetch raw price data
+            df_bt = fetch_stock_data(sym, period=per, interval="1d")
+            # 2) compute the rolling‐20 SMA so backtest_strategy can see it
+            df_bt["SMA_20"] = df_bt["Close"].rolling(window=20).mean()
+            # 3) drop initial NaNs so backtest works start‐to‐finish
+            df_bt = df_bt.dropna(subset=["SMA_20"])
+            # 4) now run the backtester
+            dfh, met = backtest_strategy(df_bt)
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=dfh.index, y=dfh["cumulative_strategy"], name="Strategy"))
             fig.add_trace(go.Scatter(x=dfh.index, y=dfh["cumulative_buyhold"],

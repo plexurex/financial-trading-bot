@@ -1,4 +1,3 @@
-
 import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -7,9 +6,11 @@ import joblib
 
 from src.utils.data_collection import fetch_stock_data
 
+# TA imports
+from ta.momentum    import RSIIndicator
+from ta.trend       import MACD, EMAIndicator
+from ta.volatility  import BollingerBands, AverageTrueRange
 
-from ta.trend import RSIIndicator, MACD, EMAIndicator
-from ta.volatility import BollingerBands, AverageTrueRange
 
 def standardize_price_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
